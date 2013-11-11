@@ -18,8 +18,16 @@ public class PCFGParserTester {
   /**
    * Parsers are required to map sentences to trees.  How a parser is constructed and trained is not specified.
    */
-  static interface Parser {
-    Tree<String> getBestParse(List<String> sentence);
+  static abstract class Parser {
+      abstract Tree<String> getBestParse(List<String> sentence);
+
+      protected List<Tree<String>> annotateTrees(List<Tree<String>> trees) {
+          List<Tree<String>> annotatedTrees = new ArrayList<Tree<String>>();
+          for (Tree<String> tree : trees) {
+              annotatedTrees.add(TreeAnnotations.annotateTree(tree));
+          }
+          return annotatedTrees;
+      }
   }
 
   /**
@@ -27,7 +35,7 @@ public class PCFGParserTester {
    * method, then either retrieves a known parse of that tag sequence, or builds a right-branching parse for unknown tag
    * sequences.
    */
-  static class BaselineParser implements Parser {
+  static class BaselineParser extends Parser {
     CounterMap<List<String>, Tree<String>> knownParses;
     CounterMap<Integer, String> spanToCategories;
     Lexicon lexicon;
@@ -123,15 +131,7 @@ public class PCFGParserTester {
       System.out.println("done.");
     }
 
-    private List<Tree<String>> annotateTrees(List<Tree<String>> trees) {
-      List<Tree<String>> annotatedTrees = new ArrayList<Tree<String>>();
-      for (Tree<String> tree : trees) {
-        annotatedTrees.add(TreeAnnotations.annotateTree(tree));
-      }
-      return annotatedTrees;
-    }
-
-    private int tallySpans(Tree<String> tree, int start) {
+    protected int tallySpans(Tree<String> tree, int start) {
       if (tree.isLeaf() || tree.isPreTerminal()) return 1;
       int end = start;
       for (Tree<String> child : tree.getChildren()) {
@@ -673,7 +673,7 @@ public class PCFGParserTester {
     System.out.print("Loading training trees (sections 2-21) ... ");
     List<Tree<String>> trainTrees = readTrees(basePath, 200, 2199, maxTrainLength);
     System.out.println("done. (" + trainTrees.size() + " trees)");
-    List<Tree<String>> testTrees = null;
+    List<Tree<String>> testTrees;
     if (testMode.equalsIgnoreCase("validate")) {
       System.out.print("Loading validation trees (section 22) ... ");
       testTrees = readTrees(basePath, 2200, 2299, maxTestLength);
@@ -683,8 +683,7 @@ public class PCFGParserTester {
     }
     System.out.println("done. (" + testTrees.size() + " trees)");
 
-    // TODO : Build a better parser!
-    Parser parser = new BaselineParser(trainTrees);
+    Parser parser = argMap.containsKey("-baseline") ? new BaselineParser(trainTrees) : new CKYParser(trainTrees);
 
     testParser(parser, testTrees, verbose);
   }
