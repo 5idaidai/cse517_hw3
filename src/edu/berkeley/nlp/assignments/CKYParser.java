@@ -53,12 +53,15 @@ public class CKYParser extends PCFGParserTester.Parser {
         String binaryTag = "ROOT";
         String unaryTag  = "ROOT";
         for (String tag : rootTags) {
-            double binary_score = binaryPi(sentence, 0, sentence.size() - 1, tag);
-            double unary_score  =  unaryPi(sentence, 0, sentence.size() - 1, tag);
-            if (binary_score > binary_max) {
-                binary_max = binary_score;
-                binaryTag = tag;
+            if (sentence.size() > 1) {
+                double binary_score = binaryPi(sentence, 0, sentence.size() - 1, tag);
+                if (binary_score > binary_max) {
+                    binary_max = binary_score;
+                    binaryTag = tag;
+                }
             }
+
+            double unary_score  =  unaryPi(sentence, 0, sentence.size() - 1, tag);
             if (unary_score > unary_max) {
                 unary_max = unary_score;
                 unaryTag = tag;

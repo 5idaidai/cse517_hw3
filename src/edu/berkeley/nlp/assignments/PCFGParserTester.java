@@ -150,35 +150,106 @@ public class PCFGParserTester {
    * unannotating them for scoring.
    */
   static class TreeAnnotations {
+    private static class MarkovContext {
+        List<String> vertical_ancestors;
+        List<String> horizontal_ancestors;
+        int vertical_markovization;
+        int horizontal_markovization;
+
+        public MarkovContext(int vertical_markovization, int horizontal_markovization) {
+            this.vertical_markovization = vertical_markovization;
+            this.horizontal_markovization = horizontal_markovization;
+            vertical_ancestors   = new ArrayList<String>();
+            horizontal_ancestors = new ArrayList<String>();
+        }
+
+        public String label() {
+            return intermediateLabel();
+        }
+
+        public String intermediateLabel() {
+            StringBuilder sb = new StringBuilder();
+            String label = sb.append("@").append(parentLabel()).append("->").append(siblingLabel()).toString();
+            return  label;
+        }
+
+        public void addParent(String parent) {
+            vertical_ancestors.add(parent);
+        }
+
+        public void dropParent() {
+            vertical_ancestors.remove(vertical_ancestors.size() - 1);
+        }
+
+        public void addSibling(String parent) {
+            horizontal_ancestors.add(parent);
+        }
+
+        public void dropSibling() {
+            horizontal_ancestors.remove(horizontal_ancestors.size() - 1);
+        }
+
+        private String parentLabel() {
+            int min = Math.max(0, vertical_ancestors.size() - vertical_markovization);
+            List<String> markovParents = vertical_ancestors.subList(min, vertical_ancestors.size());
+            return markovLabel(markovParents);
+        }
+
+        private String siblingLabel() {
+            int min = Math.max(0, horizontal_ancestors.size() - horizontal_markovization);
+            List<String> markovSiblings = horizontal_ancestors.subList(min, horizontal_ancestors.size());
+            return markovLabel(markovSiblings);
+        }
+
+        private String markovLabel(List<String> markov) {
+            StringBuilder sb = new StringBuilder();
+            for (String element : markov) {
+                sb.append(element);
+                sb.append("_");
+            }
+            sb.deleteCharAt(sb.length() - 1);
+            return sb.toString();
+        }
+    }
     public static Tree<String> annotateTree(Tree<String> unAnnotatedTree) {
-      // Currently, the only annotation done is a lossless binarization
-      // TODO : change the annotation from a lossless binarization to a finite-order markov process (try at least 1st and 2nd order)
-      // TODO : mark nodes with the label of their parent nodes, giving a second order vertical markov process
-      return binarizeTree(unAnnotatedTree);
+        MarkovContext context = new MarkovContext(1, Integer.MAX_VALUE);
+        return annotateTree(unAnnotatedTree, context);
     }
 
-    private static Tree<String> binarizeTree(Tree<String> tree) {
-      String label = tree.getLabel();
-      if (tree.isLeaf())
-        return new Tree<String>(label);
-      if (tree.getChildren().size() == 1) {
-        return new Tree<String>(label, Collections.singletonList(binarizeTree(tree.getChildren().get(0))));
-      }
-      // otherwise, it's a binary-or-more local tree, so decompose it into a sequence of binary and unary trees.
-      String intermediateLabel = "@" + label + "->";
-      Tree<String> intermediateTree = binarizeTreeHelper(tree, 0, intermediateLabel);
-      return new Tree<String>(label, intermediateTree.getChildren());
+    public static Tree<String> annotateTree(Tree<String> unAnnotatedTree, MarkovContext context) {
+        return binarizeTree(unAnnotatedTree, context);
     }
 
-    private static Tree<String> binarizeTreeHelper(Tree<String> tree, int numChildrenGenerated, String intermediateLabel) {
-      Tree<String> leftTree = tree.getChildren().get(numChildrenGenerated);
-      List<Tree<String>> children = new ArrayList<Tree<String>>();
-      children.add(binarizeTree(leftTree));
-      if (numChildrenGenerated < tree.getChildren().size() - 1) {
-        Tree<String> rightTree = binarizeTreeHelper(tree, numChildrenGenerated + 1, intermediateLabel + "_" + leftTree.getLabel());
-        children.add(rightTree);
-      }
-      return new Tree<String>(intermediateLabel, children);
+    private static Tree<String> binarizeTree(Tree<String> tree, MarkovContext context) {
+        String label = tree.getLabel();
+        if (tree.isLeaf()) {
+            return new Tree<String>(label);
+        }
+
+        context.addParent(label);
+        if (tree.getChildren().size() == 1) {
+            Tree<String> newTree = new Tree<String>(label, Collections.singletonList(binarizeTree(tree.getChildren().get(0), context)));
+            context.dropParent();
+            return newTree;
+        } else {
+            Tree<String> intermediateTree = binarizeTreeHelper(tree, 0, context);
+            context.dropParent();
+            return new Tree<String>(label, intermediateTree.getChildren());
+        }
+    }
+
+    private static Tree<String> binarizeTreeHelper(Tree<String> tree, int numChildrenGenerated, MarkovContext context) {
+        Tree<String> leftTree = tree.getChildren().get(numChildrenGenerated);
+        List<Tree<String>> children = new ArrayList<Tree<String>>();
+        children.add(binarizeTree(leftTree, context));
+        if (numChildrenGenerated < tree.getChildren().size() - 1) {
+            context.addSibling(leftTree.getLabel());
+            Tree<String> rightTree = binarizeTreeHelper(tree, numChildrenGenerated + 1, context);
+            context.dropSibling();
+            children.add(rightTree);
+        }
+        Tree<String> newTree = new Tree<String>(context.label(), children);
+        return newTree;
     }
 
     public static Tree<String> unAnnotateTree(Tree<String> annotatedTree) {
