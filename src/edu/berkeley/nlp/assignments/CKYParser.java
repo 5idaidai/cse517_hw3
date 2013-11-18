@@ -9,7 +9,6 @@ import java.util.*;
  * @author Keith Stone
  */
 public class CKYParser extends PCFGParserTester.Parser {
-    PCFGParserTester.Lexicon lexicon;
     PCFGParserTester.UnaryClosure uc;
     PCFGParserTester.Grammar grammar;
 
@@ -74,6 +73,17 @@ public class CKYParser extends PCFGParserTester.Parser {
         } else {
             annotatedBestParse =  unaryPiTrees.get(cacheKey(0, sentence.size() - 1, unaryTag));
         }
+
+        // Oops case, create the default tree.
+        if (Math.max(binary_max, unary_max) == 0.0) {
+            List<Tree<String>> children = new ArrayList<Tree<String>>();
+            for (String word : sentence) {
+                String tag = getBestTag(word);
+                Tree<String> wordTree = new Tree<String>(word, new ArrayList<Tree<String>>());
+                children.add(new Tree<String>(tag, Collections.singletonList(wordTree)));
+            }
+            return new Tree<String>("ROOT", children);
+        }
         return PCFGParserTester.TreeAnnotations.unAnnotateTree(annotatedBestParse);
     }
 
@@ -87,9 +97,9 @@ public class CKYParser extends PCFGParserTester.Parser {
         if (unaryPiScores.containsKey(cache_key)) {
             return unaryPiScores.get(cache_key);
         }
+        double max = Double.NEGATIVE_INFINITY;
         if (i == j) {
             // Base case
-            double max = 0.0;
             List<PCFGParserTester.UnaryRule> closure = uc.getClosedUnaryRulesByParent(tag);
             for (PCFGParserTester.UnaryRule rule : closure) {
                 double ruleScore =  rule.getScore();
@@ -104,26 +114,25 @@ public class CKYParser extends PCFGParserTester.Parser {
                     unaryPiTrees .put(cache_key, tree);
                 }
             }
-            return max;
         } else {
             // Recursion
-            double max = 0.0;
             List<PCFGParserTester.UnaryRule> closure = uc.getClosedUnaryRulesByParent(tag);
             for (PCFGParserTester.UnaryRule rule : closure) {
+                String childRule = rule.getChild();
                 double ruleScore      = rule.getScore();
-                double expansionScore = binaryPi(sentence, i, j, rule.getChild());
+                double expansionScore = binaryPi(sentence, i, j, childRule);
                 double score = ruleScore * expansionScore;
                 if (score > max) {
                     max = score;
-                    Tree<String> child = binaryPiTrees.get(cacheKey(i, j, rule.getChild()));
+                    Tree<String> child = binaryPiTrees.get(cacheKey(i, j, childRule));
                     Tree<String> tree = new Tree<String>(rule.getParent(), Collections.singletonList(child));
 
                     unaryPiScores.put(cache_key, score);
                     unaryPiTrees .put(cache_key, tree);
                 }
             }
-            return max;
         }
+        return Math.max(max, 0.0);
     }
 
     private double binaryPi(List<String> sentence, int i, int j, String tag) {
@@ -139,14 +148,14 @@ public class CKYParser extends PCFGParserTester.Parser {
         if (i == j) {
             throw new IllegalArgumentException("Cannot binary split a single node");
         } else {
-            double max_score = 0.0;
+            double max_score = Double.NEGATIVE_INFINITY;
             for (int s = i + 1; s <= j; s++) {
                 List<PCFGParserTester.BinaryRule> binaryRules = grammar.getBinaryRulesByParent(tag);
                 for ( PCFGParserTester.BinaryRule binaryRule : binaryRules) {
                     double ruleScore  = binaryRule.getScore();
                     double leftScore  = unaryPi(sentence, i, s - 1, binaryRule.getLeftChild()) ;
                     double rightScore = unaryPi(sentence, s,     j, binaryRule.getRightChild());
-                    double score = ruleScore * leftScore * rightScore;
+                    double score = ruleScore *leftScore * rightScore;
                     if (score > max_score) {
                         max_score = score;
 
@@ -162,8 +171,7 @@ public class CKYParser extends PCFGParserTester.Parser {
                     }
                 }
             }
-
-            return max_score;
+            return Math.max(max_score, 0.0);
         }
     }
 

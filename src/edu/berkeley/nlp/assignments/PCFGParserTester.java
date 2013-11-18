@@ -19,6 +19,8 @@ public class PCFGParserTester {
    * Parsers are required to map sentences to trees.  How a parser is constructed and trained is not specified.
    */
   static abstract class Parser {
+      Lexicon lexicon;
+
       abstract Tree<String> getBestParse(List<String> sentence);
 
       protected List<Tree<String>> annotateTrees(List<Tree<String>> trees) {
@@ -27,6 +29,19 @@ public class PCFGParserTester {
               annotatedTrees.add(TreeAnnotations.annotateTree(tree));
           }
           return annotatedTrees;
+      }
+
+      protected String getBestTag(String word) {
+          double bestScore = Double.NEGATIVE_INFINITY;
+          String bestTag = null;
+          for (String tag : lexicon.getAllTags()) {
+              double score = lexicon.scoreTagging(word, tag);
+              if (bestTag == null || score > bestScore) {
+                  bestScore = score;
+                  bestTag = tag;
+              }
+          }
+          return bestTag;
       }
   }
 
@@ -38,7 +53,6 @@ public class PCFGParserTester {
   static class BaselineParser extends Parser {
     CounterMap<List<String>, Tree<String>> knownParses;
     CounterMap<Integer, String> spanToCategories;
-    Lexicon lexicon;
 
     public Tree<String> getBestParse(List<String> sentence) {
       List<String> tags = getBaselineTagging(sentence);
@@ -94,19 +108,6 @@ public class PCFGParserTester {
       return tags;
     }
 
-    private String getBestTag(String word) {
-      double bestScore = Double.NEGATIVE_INFINITY;
-      String bestTag = null;
-      for (String tag : lexicon.getAllTags()) {
-        double score = lexicon.scoreTagging(word, tag);
-        if (bestTag == null || score > bestScore) {
-          bestScore = score;
-          bestTag = tag;
-        }
-      }
-      return bestTag;
-    }
-
     public BaselineParser(List<Tree<String>> trainTrees) {
 
       System.out.print("Annotating / binarizing training trees ... ");
@@ -153,18 +154,25 @@ public class PCFGParserTester {
     private static class MarkovContext {
         List<String> vertical_ancestors;
         List<String> horizontal_ancestors;
+        Deque<List<String>> higher_order_siblings;
+
         int vertical_markovization;
         int horizontal_markovization;
 
         public MarkovContext(int vertical_markovization, int horizontal_markovization) {
             this.vertical_markovization = vertical_markovization;
             this.horizontal_markovization = horizontal_markovization;
-            vertical_ancestors   = new ArrayList<String>();
-            horizontal_ancestors = new ArrayList<String>();
+            higher_order_siblings = new ArrayDeque<List<String>>();
+            vertical_ancestors    = new ArrayList<String>();
+            horizontal_ancestors  = new ArrayList<String>();
         }
 
         public String label() {
-            return intermediateLabel();
+            if (vertical_markovization == 1 && horizontal_ancestors.size() == 0) {
+                return vertical_ancestors.get(vertical_ancestors.size() - 1);
+            } else {
+                return intermediateLabel();
+            }
         }
 
         public String intermediateLabel() {
@@ -174,10 +182,13 @@ public class PCFGParserTester {
         }
 
         public void addParent(String parent) {
+            higher_order_siblings.push(horizontal_ancestors);
+            horizontal_ancestors = new ArrayList<String>();
             vertical_ancestors.add(parent);
         }
 
         public void dropParent() {
+            horizontal_ancestors = higher_order_siblings.pop();
             vertical_ancestors.remove(vertical_ancestors.size() - 1);
         }
 
@@ -207,13 +218,16 @@ public class PCFGParserTester {
                 sb.append(element);
                 sb.append("_");
             }
-            sb.deleteCharAt(sb.length() - 1);
+            if (markov.size() > 0)
+                sb.deleteCharAt(sb.length() - 1);
             return sb.toString();
         }
     }
+
     public static Tree<String> annotateTree(Tree<String> unAnnotatedTree) {
         MarkovContext context = new MarkovContext(1, Integer.MAX_VALUE);
-        return annotateTree(unAnnotatedTree, context);
+        Tree<String> tree = annotateTree(unAnnotatedTree, context);
+        return tree;
     }
 
     public static Tree<String> annotateTree(Tree<String> unAnnotatedTree, MarkovContext context) {
@@ -221,21 +235,17 @@ public class PCFGParserTester {
     }
 
     private static Tree<String> binarizeTree(Tree<String> tree, MarkovContext context) {
-        String label = tree.getLabel();
+        context.addParent(tree.getLabel());
+        Tree<String> newTree;
         if (tree.isLeaf()) {
-            return new Tree<String>(label);
-        }
-
-        context.addParent(label);
-        if (tree.getChildren().size() == 1) {
-            Tree<String> newTree = new Tree<String>(label, Collections.singletonList(binarizeTree(tree.getChildren().get(0), context)));
-            context.dropParent();
-            return newTree;
+            newTree = new Tree<String>(context.label());
+        } else if (tree.getChildren().size() == 1) {
+            newTree = new Tree<String>(context.label(), Collections.singletonList(binarizeTree(tree.getChildren().get(0), context)));
         } else {
-            Tree<String> intermediateTree = binarizeTreeHelper(tree, 0, context);
-            context.dropParent();
-            return new Tree<String>(label, intermediateTree.getChildren());
+            newTree = binarizeTreeHelper(tree, 0, context);
         }
+        context.dropParent();
+        return newTree;
     }
 
     private static Tree<String> binarizeTreeHelper(Tree<String> tree, int numChildrenGenerated, MarkovContext context) {
