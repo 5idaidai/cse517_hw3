@@ -17,10 +17,13 @@ public class CKYParser extends PCFGParserTester.Parser {
     Map<String, Double>       binaryPiScores;
     Map<String, Double>       unaryPiScores;
     Set<String>               rootTags;
+    PCFGParserTester.TreeAnnotations.MarkovContext context;
 
-    public CKYParser(List<Tree<String>> trainTrees) {
+    public CKYParser(List<Tree<String>> trainTrees,  PCFGParserTester.TreeAnnotations.MarkovContext context) {
+        this.context = context;
+
         System.out.print("Annotating / binarizing training trees ... ");
-        List<Tree<String>> annotatedTrainTrees = annotateTrees(trainTrees);
+        List<Tree<String>> annotatedTrainTrees = annotateTrees(trainTrees, context);
         System.out.println("done.");
 
         System.out.print("Building grammar ... ");
@@ -76,15 +79,47 @@ public class CKYParser extends PCFGParserTester.Parser {
 
         // Oops case, create the default tree.
         if (Math.max(binary_max, unary_max) == 0.0) {
-            List<Tree<String>> children = new ArrayList<Tree<String>>();
-            for (String word : sentence) {
-                String tag = getBestTag(word);
-                Tree<String> wordTree = new Tree<String>(word, new ArrayList<Tree<String>>());
-                children.add(new Tree<String>(tag, Collections.singletonList(wordTree)));
-            }
-            return new Tree<String>("ROOT", children);
+             return default_parse(sentence);
         }
+
+        normalize_structure(annotatedBestParse);
+
         return PCFGParserTester.TreeAnnotations.unAnnotateTree(annotatedBestParse);
+    }
+
+    private void normalize_structure(Tree<String> tree) {
+        if (tree.getChildren().size() == 1) {
+            Tree<String> child = tree.getChildren().get(0);
+            if (tree.getLabel().equals(child.getLabel())) {
+                tree.setChildren(child.getChildren());
+            } else {
+                List<String> path = uc.getPath(new PCFGParserTester.UnaryRule(tree.getLabel(), child.getLabel()));
+                if (path.size() > 2) {
+                    Tree<String> topOfChain = null;
+                    for (int i = path.size() - 1; i >= 0; i--) {
+                        topOfChain = new Tree<String>(path.get(i), (i == path.size() - 1) ? child.getChildren() : Collections.singletonList(topOfChain));
+                    }
+                    tree.setChildren(Collections.singletonList(topOfChain));
+                }
+            }
+            for (Tree<String> grandchild : child.getChildren()) {
+                normalize_structure(grandchild);
+            }
+        } else {
+            for (Tree<String> child : tree.getChildren()) {
+                normalize_structure(child);
+            }
+        }
+    }
+
+    private Tree<String> default_parse(List<String> sentence) {
+        List<Tree<String>> children = new ArrayList<Tree<String>>();
+        for (String word : sentence) {
+            String tag = getBestTag(word);
+            Tree<String> wordTree = new Tree<String>(word, new ArrayList<Tree<String>>());
+            children.add(new Tree<String>(tag, Collections.singletonList(wordTree)));
+        }
+        return new Tree<String>("ROOT", children);
     }
 
     private double unaryPi(List<String> sentence, int i, int j, String tag) {

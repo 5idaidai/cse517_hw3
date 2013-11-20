@@ -24,9 +24,13 @@ public class PCFGParserTester {
       abstract Tree<String> getBestParse(List<String> sentence);
 
       protected List<Tree<String>> annotateTrees(List<Tree<String>> trees) {
+          return annotateTrees(trees, new TreeAnnotations.MarkovContext(1, Integer.MAX_VALUE));
+      }
+
+      protected List<Tree<String>> annotateTrees(List<Tree<String>> trees, TreeAnnotations.MarkovContext context) {
           List<Tree<String>> annotatedTrees = new ArrayList<Tree<String>>();
           for (Tree<String> tree : trees) {
-              annotatedTrees.add(TreeAnnotations.annotateTree(tree));
+              annotatedTrees.add(TreeAnnotations.annotateTree(tree, context));
           }
           return annotatedTrees;
       }
@@ -151,7 +155,7 @@ public class PCFGParserTester {
    * unannotating them for scoring.
    */
   static class TreeAnnotations {
-    private static class MarkovContext {
+    public static class MarkovContext {
         List<String> vertical_ancestors;
         List<String> horizontal_ancestors;
         Deque<List<String>> higher_order_siblings;
@@ -168,8 +172,8 @@ public class PCFGParserTester {
         }
 
         public String label() {
-            if (vertical_markovization == 1 && horizontal_ancestors.size() == 0) {
-                return vertical_ancestors.get(vertical_ancestors.size() - 1);
+            if (horizontal_ancestors.size() == 0) {
+                return parentLabel();
             } else {
                 return intermediateLabel();
             }
@@ -203,7 +207,7 @@ public class PCFGParserTester {
         private String parentLabel() {
             int min = Math.max(0, vertical_ancestors.size() - vertical_markovization);
             List<String> markovParents = vertical_ancestors.subList(min, vertical_ancestors.size());
-            return markovLabel(markovParents, false);
+            return markovLabel(markovParents, false, "^");
         }
 
         private String siblingLabel() {
@@ -217,9 +221,13 @@ public class PCFGParserTester {
         }
 
         private String markovLabel(List<String> markov, boolean leading_underscore) {
+            return markovLabel(markov, leading_underscore, "_");
+        }
+
+        private String markovLabel(List<String> markov, boolean leading_underscore, String separator) {
             StringBuilder sb = new StringBuilder();
             for (String element : markov) {
-                sb.append("_");
+                sb.append(separator);
                 sb.append(element);
             }
             if (!leading_underscore)
@@ -235,14 +243,15 @@ public class PCFGParserTester {
     }
 
     public static Tree<String> annotateTree(Tree<String> unAnnotatedTree, MarkovContext context) {
-        return binarizeTree(unAnnotatedTree, context);
+        Tree<String> tree = binarizeTree(unAnnotatedTree, context);
+         return tree;
     }
 
     private static Tree<String> binarizeTree(Tree<String> tree, MarkovContext context) {
         context.addParent(tree.getLabel());
         Tree<String> newTree;
         if (tree.isLeaf()) {
-            newTree = new Tree<String>(context.label());
+            newTree = new Tree<String>(tree.getLabel());
         } else if (tree.getChildren().size() == 1) {
             newTree = new Tree<String>(context.label(), Collections.singletonList(binarizeTree(tree.getChildren().get(0), context)));
         } else {
@@ -768,7 +777,23 @@ public class PCFGParserTester {
     }
     System.out.println("done. (" + testTrees.size() + " trees)");
 
-    Parser parser = argMap.containsKey("-baseline") ? new BaselineParser(trainTrees) : new CKYParser(trainTrees);
+    int v_markov = argMap.containsKey("-vMarkov") ? Integer.parseInt(argMap.get("-vMarkov")) : 1;
+    int h_markov = argMap.containsKey("-hMarkov") ? Integer.parseInt(argMap.get("-hMarkov")) : Integer.MAX_VALUE;
+
+    TreeAnnotations.MarkovContext context = new TreeAnnotations.MarkovContext(v_markov, h_markov);
+
+    Parser parser = argMap.containsKey("-baseline") ? new BaselineParser(trainTrees) : new CKYParser(trainTrees, context);
+
+      /*
+    List<String> forced_sentence = new ArrayList<String>();
+      forced_sentence.add("The");
+      forced_sentence.add("public");
+      forced_sentence.add("is");
+      forced_sentence.add("still");
+      forced_sentence.add("cautious");
+      forced_sentence.add(".");
+    parser.getBestParse(forced_sentence);
+    */
 
     testParser(parser, testTrees, verbose);
   }

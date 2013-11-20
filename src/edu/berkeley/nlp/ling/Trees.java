@@ -25,14 +25,17 @@ public class Trees {
 	  
 	public static String transformLabel(Tree<String> tree) {
 		String transformedLabel = tree.getLabel();
-	      int cutIndex = transformedLabel.indexOf('-');
-	      int cutIndex2 = transformedLabel.indexOf('=');
-	      if (cutIndex2 > 0 && (cutIndex2 < cutIndex || cutIndex == -1))
-	        cutIndex = cutIndex2;
-	      if (cutIndex > 0 && ! tree.isLeaf()) {
+	    int cutIndex = transformedLabel.indexOf('-');
+	    int cutIndex2 = transformedLabel.indexOf('=');
+	    if (cutIndex2 > 0 && (cutIndex2 < cutIndex || cutIndex == -1))
+	       cutIndex = cutIndex2;
+	    if (cutIndex > 0 && ! tree.isLeaf()) {
 	        transformedLabel = new String(transformedLabel.substring(0,cutIndex));
-	      }
-	      return transformedLabel;
+	    }
+        int cutIndex3 = transformedLabel.indexOf('^');
+        if (cutIndex3 >= 0)
+            transformedLabel = new String(transformedLabel.substring(cutIndex3 + 1));
+	    return transformedLabel;
 	}
 	  
     public Tree<String> transformTree(Tree<String> tree) {
