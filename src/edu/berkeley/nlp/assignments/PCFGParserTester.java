@@ -203,7 +203,7 @@ public class PCFGParserTester {
         private String parentLabel() {
             int min = Math.max(0, vertical_ancestors.size() - vertical_markovization);
             List<String> markovParents = vertical_ancestors.subList(min, vertical_ancestors.size());
-            return markovLabel(markovParents);
+            return markovLabel(markovParents, false);
         }
 
         private String siblingLabel() {
@@ -213,13 +213,17 @@ public class PCFGParserTester {
         }
 
         private String markovLabel(List<String> markov) {
+            return markovLabel(markov, true);
+        }
+
+        private String markovLabel(List<String> markov, boolean leading_underscore) {
             StringBuilder sb = new StringBuilder();
             for (String element : markov) {
-                sb.append(element);
                 sb.append("_");
+                sb.append(element);
             }
-            if (markov.size() > 0)
-                sb.deleteCharAt(sb.length() - 1);
+            if (!leading_underscore)
+                sb.deleteCharAt(0);
             return sb.toString();
         }
     }
