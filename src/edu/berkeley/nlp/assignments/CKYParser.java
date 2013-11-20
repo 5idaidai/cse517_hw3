@@ -17,11 +17,8 @@ public class CKYParser extends PCFGParserTester.Parser {
     Map<String, Double>       binaryPiScores;
     Map<String, Double>       unaryPiScores;
     Set<String>               rootTags;
-    PCFGParserTester.TreeAnnotations.MarkovContext context;
 
     public CKYParser(List<Tree<String>> trainTrees,  PCFGParserTester.TreeAnnotations.MarkovContext context) {
-        this.context = context;
-
         System.out.print("Annotating / binarizing training trees ... ");
         List<Tree<String>> annotatedTrainTrees = annotateTrees(trainTrees, context);
         System.out.println("done.");
