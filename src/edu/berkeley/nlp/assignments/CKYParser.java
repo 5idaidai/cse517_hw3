@@ -10,92 +10,6 @@ import java.util.*;
  * @author Keith Stone
  */
 public class CKYParser extends PCFGParserTester.Parser {
-    private class TreeCache {
-        private class CacheStore {
-            public CacheStore() {
-                binaryMax = Double.NEGATIVE_INFINITY;
-                unaryMax  = Double.NEGATIVE_INFINITY;
-            }
-
-            public double getUnaryMax() {
-                return unaryMax;
-            }
-
-            public void setUnaryMax(double unaryMax) {
-                this.unaryMax = unaryMax;
-            }
-
-            public void setBinaryMax(double binaryMax) {
-                this.binaryMax = binaryMax;
-            }
-
-            public double getBinaryMax() {
-                return binaryMax;
-            }
-
-            public Tree<String> getUnaryTree() {
-                return unaryTree;
-            }
-
-            public void setUnaryTree(Tree<String> unaryTree) {
-                this.unaryTree = unaryTree;
-            }
-
-            public Tree<String> getBinaryTree() {
-                return binaryTree;
-            }
-
-            public void setBinaryTree(Tree<String> binaryTree) {
-                this.binaryTree = binaryTree;
-            }
-
-            public void addUnaryTree(PCFGParserTester.UnaryRule rule, double score, Tree<String> subTree) {
-                Tree<String> tree = new Tree<String>(rule.getParent(), Collections.singletonList(subTree));
-                this.setUnaryMax(score);
-                this.setUnaryTree(tree);
-            }
-
-            public void addBinaryTree(double score, Tree<String> tree) {
-                this.setBinaryMax(score);
-                this.setBinaryTree(tree);
-            }
-
-            double unaryMax;
-            double binaryMax;
-            Tree<String> unaryTree;
-            Tree<String> binaryTree;
-        }
-        Map<Integer, Map<Integer, Map<String, CacheStore>>> cache;
-
-        public TreeCache(List<String> sentence, PCFGParserTester.Grammar grammar) {
-            int n = sentence.size();
-            cache = new HashMap<Integer, Map<Integer, Map<String, CacheStore>>>(n);
-            for (int i =0; i < n; i++) {
-                cache.put(i, new HashMap<Integer, Map<String, CacheStore>>(n));
-                for (int j = i; j < n; j++) {
-                    cache.get(i).put(j, new HashMap<String, CacheStore>(grammar.getStates().size()));
-                }
-            }
-        }
-
-        public Tree<String> getBinaryTree(int i, int j, String tag) {
-            return getCache(i,j, tag).getBinaryTree();
-        }
-
-        public Tree<String> getUnaryTree(int i, int j, String tag) {
-            return getCache(i,j, tag).getUnaryTree();
-        }
-
-        private CacheStore getCache(int i, int j, String tag) {
-            CacheStore cache = this.cache.get(i).get(j).get(tag);
-            if (cache == null) {
-                cache = new CacheStore();
-                this.cache.get(i).get(j).put(tag, cache);
-            }
-            return cache;
-        }
-    }
-
     PCFGParserTester.UnaryClosure uc;
     PCFGParserTester.Grammar grammar;
     Set<String>               rootTags;
@@ -114,7 +28,7 @@ public class CKYParser extends PCFGParserTester.Parser {
         // Store all possible start tags for parsing
         rootTags = new HashSet<String>();
 
-        for (Tree<String> tree : trainTrees) {
+        for (Tree<String> tree : annotatedTrainTrees) {
             rootTags.add(tree.getLabel());
         }
 
@@ -148,17 +62,17 @@ public class CKYParser extends PCFGParserTester.Parser {
 
         Tree<String> annotatedBestParse;
         if (binary_max > unary_max) {
-            annotatedBestParse = tc.getBinaryTree(0, sentence.size() - 1, binaryTag);
+            annotatedBestParse = tc.buildBinaryTree(sentence, binaryTag);
         } else {
-            annotatedBestParse = tc.getUnaryTree( 0, sentence.size() - 1, unaryTag );
+            annotatedBestParse = tc.buildUnaryTree (sentence, unaryTag );
         }
 
         // Oops case, create the default tree.
         if (Math.max(binary_max, unary_max) == 0.0) {
-             return default_parse(sentence);
+            annotatedBestParse = default_parse(sentence);
+        } else {
+            normalize_structure(annotatedBestParse);
         }
-
-        normalize_structure(annotatedBestParse);
 
         return PCFGParserTester.TreeAnnotations.unAnnotateTree(annotatedBestParse);
     }
@@ -203,38 +117,27 @@ public class CKYParser extends PCFGParserTester.Parser {
         if (i > j) {
             throw new IllegalArgumentException("I is not allowed to be larger than J");
         }
+
         // Always check the cache first
-        TreeCache.CacheStore cache = treeCache.getCache(i,j,tag);
+        CacheStore cache = treeCache.getCache(i,j,tag);
         if (cache.getUnaryMax() >= 0.0) {
             return cache.getUnaryMax();
         }
-        if (i == j) {
-            // Base case
-            List<PCFGParserTester.UnaryRule> closure = uc.getClosedUnaryRulesByParent(tag);
-            for (PCFGParserTester.UnaryRule rule : closure) {
-                double ruleScore =  rule.getScore();
-                double expansionScore = lexicon.scoreTagging(sentence.get(i), rule.getChild());
-                double score = ruleScore * expansionScore;
-                if (score > cache.getUnaryMax()) {
-                    Tree<String> wordTree = new Tree<String>(sentence.get(i));
-                    Tree<String> subTree = new Tree<String>(rule.getChild(), Collections.singletonList(wordTree));
-                    cache.addUnaryTree(rule, score, subTree);
-                }
+
+        List<PCFGParserTester.UnaryRule> closure = uc.getClosedUnaryRulesByParent(tag);
+        for (PCFGParserTester.UnaryRule rule : closure) {
+            String childTag = rule.getChild();
+            double ruleScore =  rule.getScore();
+            double expansionScore;
+            if (i == j) {
+                expansionScore =  lexicon.scoreTagging(sentence.get(i), childTag);
+            } else {
+                expansionScore = binaryPi(sentence, i, j, childTag, treeCache);
             }
-        } else {
-            // Recursion
-            List<PCFGParserTester.UnaryRule> closure = uc.getClosedUnaryRulesByParent(tag);
-            for (PCFGParserTester.UnaryRule rule : closure) {
-                String childTag = rule.getChild();
-                double ruleScore      = rule.getScore();
-                double expansionScore = binaryPi(sentence, i, j, childTag, treeCache);
-                double score = ruleScore * expansionScore;
-                if (score > cache.getUnaryMax()) {
-                    Tree<String> subTree = treeCache.getBinaryTree(i, j, childTag);
-                    cache.addUnaryTree(rule, score, subTree);
-                }
-            }
+            double score = ruleScore * expansionScore;
+            cache.addUnaryRule(score, rule);
         }
+
         return Math.max(cache.getUnaryMax(), 0.0);
     }
 
@@ -243,8 +146,9 @@ public class CKYParser extends PCFGParserTester.Parser {
         if (i > j) {
             throw new IllegalArgumentException("I is not allowed to be larger than J");
         }
+
         // Always check the cache first
-        TreeCache.CacheStore cache = treeCache.getCache(i,j,tag);
+        CacheStore cache = treeCache.getCache(i,j,tag);
         if (cache.getBinaryMax() >= 0.0) {
             return cache.getBinaryMax();
         }
@@ -258,15 +162,7 @@ public class CKYParser extends PCFGParserTester.Parser {
                     double leftScore  = unaryPi(sentence, i, s - 1, binaryRule.getLeftChild(),  treeCache);
                     double rightScore = unaryPi(sentence, s,     j, binaryRule.getRightChild(), treeCache);
                     double score = ruleScore *leftScore * rightScore;
-                    if (score > cache.getBinaryMax()) {
-                        Tree<String> leftTree  = treeCache.getUnaryTree(i, s - 1, binaryRule.getLeftChild());
-                        Tree<String> rightTree = treeCache.getUnaryTree(s,     j, binaryRule.getRightChild());
-                        List<Tree<String>> children = new ArrayList<Tree<String>>();
-                        children.add(leftTree);
-                        children.add(rightTree);
-                        Tree<String> tree = new Tree<String>(binaryRule.getParent(), children);
-                        cache.addBinaryTree(score, tree);
-                    }
+                    cache.addBinaryRule(score, binaryRule, s);
                 }
             }
             return Math.max(cache.getBinaryMax(), 0.0);

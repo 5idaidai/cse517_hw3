@@ -6,6 +6,7 @@ import edu.berkeley.nlp.ling.Trees;
 import edu.berkeley.nlp.parser.EnglishPennTreebankParseEvaluator;
 import edu.berkeley.nlp.util.*;
 
+import java.sql.Time;
 import java.util.*;
 
 /**
@@ -162,6 +163,7 @@ public class PCFGParserTester {
 
         int vertical_markovization;
         int horizontal_markovization;
+        boolean markUnaryRewrites = false;
 
         public MarkovContext(int vertical_markovization, int horizontal_markovization) {
             this.vertical_markovization = vertical_markovization;
@@ -177,6 +179,10 @@ public class PCFGParserTester {
             } else {
                 return intermediateLabel();
             }
+        }
+
+        public void setMarkUnaryRewrites(boolean markUnaryRewrites) {
+            this.markUnaryRewrites = markUnaryRewrites;
         }
 
         public String intermediateLabel() {
@@ -202,6 +208,15 @@ public class PCFGParserTester {
 
         public void dropSibling() {
             horizontal_ancestors.remove(horizontal_ancestors.size() - 1);
+        }
+
+        public String getMungedLabel(Tree<String> tree) {
+            if (markUnaryRewrites) {
+                if (tree.getChildren().size() == 1 && !tree.getChildren().get(0).isLeaf()) {
+                    return tree.getLabel() + "-U";
+                }
+            }
+            return tree.getLabel();
         }
 
         private String parentLabel() {
@@ -248,7 +263,7 @@ public class PCFGParserTester {
     }
 
     private static Tree<String> binarizeTree(Tree<String> tree, MarkovContext context) {
-        context.addParent(tree.getLabel());
+        context.addParent(context.getMungedLabel(tree));
         Tree<String> newTree;
         if (tree.isLeaf()) {
             newTree = new Tree<String>(tree.getLabel());
@@ -782,34 +797,40 @@ public class PCFGParserTester {
 
     TreeAnnotations.MarkovContext context = new TreeAnnotations.MarkovContext(v_markov, h_markov);
 
-    Parser parser = argMap.containsKey("-baseline") ? new BaselineParser(trainTrees) : new CKYParser(trainTrees, context);
+    context.setMarkUnaryRewrites(argMap.containsKey("-unaryRewrites"));
 
-      /*
-    List<String> forced_sentence = new ArrayList<String>();
-      forced_sentence.add("The");
-      forced_sentence.add("public");
-      forced_sentence.add("is");
-      forced_sentence.add("still");
-      forced_sentence.add("cautious");
-      forced_sentence.add(".");
-    parser.getBestParse(forced_sentence);
-    */
+      if (argMap.containsKey("-unaryRewrites")) System.out.println("Unary Rewrites");
+      System.out.println("Horizontal Markov: " + h_markov);
+      System.out.println("Vertical Markov: " + v_markov);
 
-    testParser(parser, testTrees, verbose);
+      Parser parser = argMap.containsKey("-baseline") ? new BaselineParser(trainTrees) : new CKYParser(trainTrees, context);
+
+      testParser(parser, testTrees, verbose);
   }
 
   private static void testParser(Parser parser, List<Tree<String>> testTrees, boolean verbose) {
-    EnglishPennTreebankParseEvaluator.LabeledConstituentEval<String> eval = new EnglishPennTreebankParseEvaluator.LabeledConstituentEval<String>(Collections.singleton("ROOT"), new HashSet<String>(Arrays.asList(new String[]{"''", "``", ".", ":", ","})));
-    for (Tree<String> testTree : testTrees) {
-      List<String> testSentence = testTree.getYield();
-      Tree<String> guessedTree = parser.getBestParse(testSentence);
-      if (verbose) {
-        System.out.println("Guess:\n" + Trees.PennTreeRenderer.render(guessedTree));
-        System.out.println("Gold:\n" + Trees.PennTreeRenderer.render(testTree));
+      EnglishPennTreebankParseEvaluator.LabeledConstituentEval<String> eval = new EnglishPennTreebankParseEvaluator.LabeledConstituentEval<String>(Collections.singleton("ROOT"), new HashSet<String>(Arrays.asList(new String[]{"''", "``", ".", ":", ","})));
+      int count = 0;
+      double average = 0.0;
+      for (Tree<String> testTree : testTrees) {
+          count++;
+          Date s = new Date();
+          List<String> testSentence = testTree.getYield();
+          Tree<String> guessedTree = parser.getBestParse(testSentence);
+          long length = new Date().getTime() - s.getTime();
+          if (verbose) {
+              average = (average * (count - 1) / count) + (length / count);
+              System.out.println("Guess:\n" + Trees.PennTreeRenderer.render(guessedTree));
+              System.out.println("Gold:\n" + Trees.PennTreeRenderer.render(testTree));
+              System.out.println("Took: " + length + "ms at n=" + testSentence.size());
+              System.out.println("Average: " + average + "ms");
+              System.out.println("Progress:" + count + '/' + testTrees.size());
+              System.out.println("Time Remaining: " + (int)(average * (testTrees.size() - count) / 1000) + "s");
+          }
+          eval.evaluate(guessedTree, testTree);
+
       }
-      eval.evaluate(guessedTree, testTree);
-    }
-    eval.display(true);
+      eval.display(true);
   }
 
   private static List<Tree<String>> readTrees(String basePath, int low, int high, int maxLength) {
