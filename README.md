@@ -1,6 +1,8 @@
-=CSE 517 HW #3
+CSE 517 HW #3
+============
 
-== Parsing
+Parsing
+-------
 
 By Keith Stone
 
