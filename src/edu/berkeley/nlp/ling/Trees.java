@@ -25,6 +25,10 @@ public class Trees {
 	  
 	public static String transformLabel(Tree<String> tree) {
 		String transformedLabel = tree.getLabel();
+        // Do my parent markup first
+        int cutIndex3 = transformedLabel.indexOf('^');
+        if (cutIndex3 >= 0)
+            transformedLabel = new String(transformedLabel.substring(cutIndex3 + 1));
 	    int cutIndex = transformedLabel.indexOf('-');
 	    int cutIndex2 = transformedLabel.indexOf('=');
 	    if (cutIndex2 > 0 && (cutIndex2 < cutIndex || cutIndex == -1))
@@ -32,9 +36,6 @@ public class Trees {
 	    if (cutIndex > 0 && ! tree.isLeaf()) {
 	        transformedLabel = new String(transformedLabel.substring(0,cutIndex));
 	    }
-        int cutIndex3 = transformedLabel.indexOf('^');
-        if (cutIndex3 >= 0)
-            transformedLabel = new String(transformedLabel.substring(cutIndex3 + 1));
 	    return transformedLabel;
 	}
 	  
